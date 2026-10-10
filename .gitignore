@@ -1,0 +1,30 @@
+# 构建产物
+build/
+*/build/
+cmake-build-*/
+
+# 编译中间件与产物
+*.o
+*.a
+*.so
+*.so.*
+a.out
+
+# CMake / clangd 生成的编译数据库（含本机绝对路径）
+compile_commands.json
+.cache/
+
+# 运行时采集产物
+snapshot_*.jpg
+*.detect.jpg
+result.jpg
+
+# 校准图片集（体积大，仅保留 calib_list.txt 清单）
+yolo_detect/calib/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

@@ -1,0 +1,10 @@
+# 本工程目标为 Linux（RV1106 / uClibc），源码一律使用 LF 换行
+* text=auto eol=lf
+
+# 二进制文件不做换行处理
+*.jpg  binary
+*.png  binary
+*.ico  binary
+*.so   binary
+*.a    binary
+*.o    binary
