@@ -143,25 +143,12 @@ int main()
         return 1;
     }
 
-    ret = set_channel_args(service, 1, 640, 480, 30, CAM_FMT_JPEG);
-    if (ret < 0) {
-        std::cerr << "set usb args failed: " << ret << std::endl;
-        return 1;
-    }
-
     ret = capture_jpeg(service, 0, "snapshot_sc3336.jpg", 4);
     if (ret < 0) {
         std::cerr << "capture sc3336 failed: " << ret << std::endl;
         return 1;
     }
     detect_with_yolo("snapshot_sc3336.jpg");
-
-    ret = capture_jpeg(service, 1, "snapshot_uvc_usb.jpg", 2);
-    if (ret < 0) {
-        std::cerr << "capture uvc usb failed: " << ret << std::endl;
-        return 1;
-    }
-    detect_with_yolo("snapshot_uvc_usb.jpg");
 
     service.deinit();
     return 0;

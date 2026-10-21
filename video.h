@@ -82,6 +82,5 @@ typedef VideoContext CamContext;
     } CamVideoImpl;
 
     extern const CamVideoImpl video_impl_rk_rv1106;
-      extern const CamVideoImpl cam_video_impl_v4l2;
 
 #endif

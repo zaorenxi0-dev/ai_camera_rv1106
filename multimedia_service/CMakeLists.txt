@@ -28,7 +28,6 @@ set(MULTIMEDIA_SERVICE_SOURCES
     MultimediaServiceInterface.cpp
     cam_utils_stub.cpp
     /home/lubancat/ai_camera_rv1106/video_rv1106.c
-    /home/lubancat/ai_camera_rv1106/video_v4l2.c
     /home/lubancat/ai_camera_rv1106/video_handler_manager.c
     ${SDK_MEDIA}/samples/example/common/isp3.x/sample_comm_isp.c
     /home/lubancat/middleware/osal/osal_mutex.c

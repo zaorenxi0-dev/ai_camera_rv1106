@@ -10,13 +10,7 @@ Video::~Video() = default;
 
 CamVideoImpl *Video::getVideoImpl()
 {
-    if ((implName == "v4l2-normal") || (implName == "uvc") || (implName == "usb-v4l2"))
-    {
-        return const_cast<CamVideoImpl *>(&cam_video_impl_v4l2);
-    }
-    if ((implName == "rk-rv1106") || (implName == "rk-venc"))
-    {
-        return const_cast<CamVideoImpl *>(&video_impl_rk_rv1106);
-    }
+    /* 单摄像头方案：只保留 RV1106 MIPI (rk-venc/rk-rv1106) 实现，
+     * UVC/USB 的 v4l2 实现已随 ch1 一并移除 */
     return const_cast<CamVideoImpl *>(&video_impl_rk_rv1106);
 }
