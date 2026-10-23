@@ -139,11 +139,13 @@ int MultimediaServiceVideoBase::openInner()
         return CHANNEL_IMPL_NOT_FIND;
     }
 
-    video_open_fd++;
     if (channel_info.run_status.is_open)
     {
         return CHANNEL_ALREADY_OPEN;
     }
+
+    /* 计数必须在「确认要打开」之后加，否则重复 open 会白增一次 */
+    video_open_fd++;
 
     result = videoImpl->open(&channel_info.ctx, channel_info.dev_name);
     if (result >= 0)
@@ -169,6 +171,10 @@ int MultimediaServiceVideoBase::openInner()
     }
     else
     {
+        /* 把内部真实错误码打出来：CHANNEL_OPEN_FAILED 只是聚合状态，
+         * 直接返回它会让 -3/-4/-5/-6/-7 这类可实现定位的码全部丢失 */
+        printf("[%s][%s][%s] open failed, inner result = [%d]", s_key, s_sub,
+               channel_info.dev_name, result);
         statusChanged(CHANNEL_OPEN_FAILED);
         stopInner();
         closeInner();
@@ -322,8 +328,10 @@ int MultimediaServiceVideoBase::closeInner()
         return CHANNEL_ALREADY_CLOSE;
     }
 
-    if (channel_info.run_status.is_start == 1)
+    if (channel_info.run_status.is_start == 1 || channel_info.run_status.is_stop == 1)
     {
+        /* 必须同时看 is_stop：stop() 会先调 stopInner() 把 is_start 清 0，
+         * 只看 is_start 会让 impl->stop() 永远不被调用，VI/VENC/ISP 全部泄漏 */
         videoImpl->stop(&channel_info.ctx);
     }
     result = videoImpl->close(&channel_info.ctx);
