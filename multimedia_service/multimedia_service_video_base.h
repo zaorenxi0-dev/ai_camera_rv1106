@@ -93,6 +93,16 @@ public:
     int                  startThread();
 
     /**
+     * @brief 停止后台线程并等待其退出
+     * @return 0=成功，负数=失败
+     *
+     * 置 exited 标志后 pthread_join 等待线程真正结束。
+     * 没有这一步，deinit() 删除通道对象后线程仍在访问已释放内存（use-after-free）。
+     * 停止后 pid 归零，后续 startThread() 可以重新拉起线程。
+     */
+    int                  stopThread();
+
+    /**
      * @brief 设置通道参数到底层驱动
      * @paramargs 视频通道参数（fps/width/height/pix_format/bitrate/rc_mode 等）
      * @return 0=成功，负数=错误码

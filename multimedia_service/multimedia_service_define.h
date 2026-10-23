@@ -176,9 +176,18 @@ public:
         exited          = false;
     }
 
-    /* ── 析构函数：销毁互斥锁 ── */
+    /* ── 析构函数：停止守护线程 + 销毁互斥锁 ── */
     virtual ~VideoBaseInterface()
     {
+        /* ★ 必须先让守护线程退出，再销毁锁和对象。
+         * 原实现只销毁锁：若调用方没走 stop() 就 delete（如 deinit 直接析构），
+         * 线程下一轮仍会访问已释放的对象与已销毁的锁（use-after-free） */
+        exited = true;
+        if (pid > 0)
+        {
+            pthread_join(pid, NULL);
+            pid = 0;
+        }
         OSAL_MutexDestroy(&video_mutex_obj);
     };
 

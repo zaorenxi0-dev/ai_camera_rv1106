@@ -93,10 +93,17 @@ int MultimediaServiceVideoBase::run()
 {
     while (!exited)
     {
-        if (runStatus() != CHANNEL_OPEN_SUCCESS)
+        /* 状态由主线程在持锁路径下通过 statusChanged() 改写，
+         * 读侧必须同样持锁，否则会读到不一致的中间状态 */
+        int status = CHANNEL_OPEN_SUCCESS;
+        OSAL_MutexLock(get_mutexobj());
+        status = runStatus();
+        OSAL_MutexUnlock(get_mutexobj());
+
+        if (status != CHANNEL_OPEN_SUCCESS)
         {
             printf("[%s][%s][%s] current status = [%d] wait to retry", s_key, s_sub, channel_info.dev_name,
-                   runStatus());
+                   status);
             sleep(1);
             continue;
         }
@@ -194,6 +201,26 @@ int MultimediaServiceVideoBase::startThread()
             return YQSL_E_RUN_FAIL;
         }
     }
+    return 0;
+}
+
+int MultimediaServiceVideoBase::stopThread()
+{
+    if (pid <= 0)
+    {
+        return 0;
+    }
+
+    /* 先置退出标志，再 join：线程循环条件是 !exited，
+     * 每次循环最多阻塞 400ms（或状态异常时 1s），join 不会久等 */
+    exited = true;
+    int ret = pthread_join(pid, NULL);
+    if (ret != 0)
+    {
+        printf("[%s][%s][%s] thread join failed ret=[%d]", s_key, s_sub, channel_info.dev_name, ret);
+        return YQSL_E_RUN_FAIL;
+    }
+    pid = 0;
     return 0;
 }
 
@@ -364,6 +391,9 @@ int MultimediaServiceVideoBase::stop()
 {
     int ret = stopInner();
     int close_ret = closeInner();
+    /* 通道已停，守护线程没有继续存在的意义，这里就把它收掉；
+     * 万一将来 stop 后还要再 start，startThread() 会重新拉起（pid 已归零） */
+    stopThread();
     return ret < 0 ? ret : close_ret;
 }
 

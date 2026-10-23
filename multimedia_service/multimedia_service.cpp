@@ -72,6 +72,10 @@ int MultimediaService::deinit()
 {
     for (auto &item : video_mp)
     {
+        /* 先停通道再析构：通道对象一旦删除，VI/VENC/ISP 就再没人回收了。
+         * 正常流程（main 里 stop 后再 deinit）这里 stop 会立刻返回 CHANNEL_ALREADY_STOP，
+         * 但异常退出路径下它就是唯一的安全网 */
+        item.second->stop();
         delete item.second;
     }
     video_mp.clear();
