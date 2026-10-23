@@ -25,6 +25,16 @@ MultimediaServiceVideoBase::MultimediaServiceVideoBase(const char *impl_name)
     print_last     = 0;
     frame_count    = 0;
     implName       = impl_name ? impl_name : "";
+
+    /* 自动恢复默认关闭：sc3336 重拉必失败且可能挂死板子，
+     * 机制备好、开关留给调用方显式打开 */
+    auto_recover_      = false;
+    recover_threshold_ = 3;
+    recover_max_       = 3;
+    recover_interval_  = 1;
+    abnormal_cnt_      = 0;
+    recover_cnt_       = 0;
+    stall_timeout_ms_  = 10000;
 }
 
 MultimediaServiceVideoBase::~MultimediaServiceVideoBase()
@@ -89,26 +99,104 @@ void *thread_func(void *args)
     return NULL;
 }
 
+void MultimediaServiceVideoBase::setAutoRecover(bool enable, int threshold, int max_times, int interval)
+{
+    auto_recover_      = enable;
+    recover_threshold_ = threshold > 0 ? threshold : 3;
+    recover_max_       = max_times >= 0 ? max_times : 3;
+    recover_interval_  = interval > 0 ? interval : 1;
+
+    printf("[%s][%s][%s] auto recover %s, threshold=[%d] max=[%d] interval=[%ds]", s_key, s_sub,
+           channel_info.dev_name, enable ? "ENABLED" : "disabled", recover_threshold_, recover_max_,
+           recover_interval_);
+}
+
+int MultimediaServiceVideoBase::doRecover()
+{
+    /* 先停干净再重建：reOpenOperation() 在 is_open==1 时会直接返回
+     * CHANNEL_ALREADY_OPEN，不做任何事，所以必须由这里先停一遍 */
+    stopInner();
+    closeInner();
+
+    int ret = open(channel_info.dev_name);
+    if (ret < 0)
+    {
+        printf("[%s][%s][%s] recover: reopen failed ret=[%d]", s_key, s_sub, channel_info.dev_name, ret);
+        return ret;
+    }
+
+    ret = openInner();
+    printf("[%s][%s][%s] recover: rebuild ret=[%d] status=[%d]", s_key, s_sub, channel_info.dev_name, ret,
+           runStatus());
+    return ret;
+}
+
 int MultimediaServiceVideoBase::run()
 {
     while (!exited)
     {
         /* 状态由主线程在持锁路径下通过 statusChanged() 改写，
          * 读侧必须同样持锁，否则会读到不一致的中间状态 */
-        int status = CHANNEL_OPEN_SUCCESS;
+        int                status    = CHANNEL_OPEN_SUCCESS;
+        unsigned long long lastRead  = 0;
         OSAL_MutexLock(get_mutexobj());
-        status = runStatus();
+        status   = runStatus();
+        lastRead = last_read;
         OSAL_MutexUnlock(get_mutexobj());
 
+        /* 两类异常：① 状态不是 OPEN_SUCCESS；② 状态正常但长时间没有新帧（读帧停滞） */
         if (status != CHANNEL_OPEN_SUCCESS)
         {
-            printf("[%s][%s][%s] current status = [%d] wait to retry", s_key, s_sub, channel_info.dev_name,
-                   status);
-            sleep(1);
-            continue;
+            abnormal_cnt_++;
+            printf("[%s][%s][%s] current status = [%d] abnormal=%d/%d", s_key, s_sub, channel_info.dev_name,
+                   status, abnormal_cnt_, recover_threshold_);
+        }
+        else if (lastRead > 0 && (cm_tick_milli() - lastRead) > stall_timeout_ms_)
+        {
+            abnormal_cnt_++;
+            printf("[%s][%s][%s] no frame for %llums, abnormal=%d/%d", s_key, s_sub, channel_info.dev_name,
+                   cm_tick_milli() - lastRead, abnormal_cnt_, recover_threshold_);
+        }
+        else
+        {
+            /* 一切正常，异常计数清零；恢复次数也随稳定时长缓慢回退，
+             * 避免一次偶发故障把重试预算永久耗光 */
+            if (abnormal_cnt_ > 0)
+            {
+                abnormal_cnt_ = 0;
+            }
+            if (recover_cnt_ > 0)
+            {
+                recover_cnt_--;
+            }
         }
 
-        usleep(400000);
+        if (abnormal_cnt_ >= recover_threshold_)
+        {
+            if (!auto_recover_)
+            {
+                /* 只观测、不动作：驱动侧修好 sensor 复位后打开开关即可 */
+                printf("[%s][%s][%s] channel abnormal but auto recover disabled, keep watching", s_key, s_sub,
+                       channel_info.dev_name);
+            }
+            else if (recover_cnt_ >= recover_max_)
+            {
+                printf("[%s][%s][%s] recover reach max [%d], give up", s_key, s_sub, channel_info.dev_name,
+                       recover_max_);
+            }
+            else
+            {
+                recover_cnt_++;
+                printf("[%s][%s][%s] recover start, times=%d/%d", s_key, s_sub, channel_info.dev_name,
+                       recover_cnt_, recover_max_);
+                OSAL_MutexLock(get_mutexobj());
+                doRecover();
+                OSAL_MutexUnlock(get_mutexobj());
+                abnormal_cnt_ = 0;
+            }
+        }
+
+        sleep(recover_interval_);
     }
     return YQSL_E_OK;
 }
@@ -185,6 +273,9 @@ int MultimediaServiceVideoBase::openInner()
         statusChanged(CHANNEL_OPEN_FAILED);
         stopInner();
         closeInner();
+        /* 打开失败也要把守护线程拉起来：否则这类故障永远没人重试，
+         * 看门狗会按 threshold 累计异常并在允许时执行重建 */
+        startThread();
     }
     return runStatus();
 }

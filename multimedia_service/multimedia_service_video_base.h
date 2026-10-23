@@ -150,6 +150,29 @@ public:
      */
     int readError();
 
+    /**
+     * @brief 配置守护线程（看门狗）的自动恢复行为
+     * @param enable     是否允许守护线程自动重建通道
+     * @param threshold  连续异常多少次触发一次恢复
+     * @param max_times  最多恢复几次；达到上限后停止重试并打印放弃日志
+     * @param interval   每轮检测间隔（秒）
+     *
+     * ★ 默认关闭自动重建：sc3336 + 本 SDK 实测 STOP/START 重拉必现
+     * GetStream 0xa004800e，且反复重拉曾导致板子挂死（需断电恢复）。
+     * 机制（检测/计数/退避/上限）全部就绪，待驱动侧修好 sensor 复位后
+     * 由调用方显式开启即可，不需要再改代码。
+     */
+    void setAutoRecover(bool enable, int threshold, int max_times, int interval);
+
+    /** @return 是否开启了自动恢复 */
+    bool autoRecoverEnabled() const { return auto_recover_; }
+
+    /** @return 当前连续异常计数（供外部观测/健康检查） */
+    int abnormalCount() const { return abnormal_cnt_; }
+
+    /** @return 已执行的自动恢复次数 */
+    int recoverCount() const { return recover_cnt_; }
+
     /** 实现名称（如 "v4l2" / "mipi"），用于日志 */
     std::string implName;
 
@@ -179,6 +202,37 @@ public:
 
     /** 帧计数器（每 60 秒打印一次后清零，用于统计帧率） */
     int                frame_count;
+
+    /* ===== 守护线程（看门狗）状态 ===== */
+
+    /** 是否允许守护线程自动重建通道（默认 false，原因见 setAutoRecover 注释） */
+    bool auto_recover_;
+
+    /** 触发一次恢复所需的连续异常次数 */
+    int  recover_threshold_;
+
+    /** 自动恢复次数上限，达到后放弃重试 */
+    int  recover_max_;
+
+    /** 每轮检测间隔（秒） */
+    int  recover_interval_;
+
+    /** 当前连续异常计数（状态异常 或 读帧停滞 都会累加） */
+    int  abnormal_cnt_;
+
+    /** 已执行的自动恢复次数 */
+    int  recover_cnt_;
+
+    /** 读帧停滞判定阈值（毫秒）：状态正常但这么久没拿到新帧也算异常 */
+    unsigned long long stall_timeout_ms_;
+
+    /**
+     * @brief 守护线程执行一次「停 → 关 → 开 → 启」的完整重建
+     * @return 0=成功，负数=失败
+     *
+     * 必须在持锁状态下调用；重建前后会释放锁以便主线程有机会插入。
+     */
+    int doRecover();
 };
 
 
